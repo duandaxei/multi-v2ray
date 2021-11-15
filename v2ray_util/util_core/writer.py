@@ -122,18 +122,6 @@ class StreamWriter(Writer):
             type_str = "wireguard"
         self.part_json["streamSettings"]["kcpSettings"]["header"]["type"] = type_str
 
-    def to_vmess(self, header_type):
-        self.to_kcp(header_type)
-        self.part_json["protocol"] = "vmess"
-        self.part_json["settings"] = {
-            "clients": [
-                {
-                    "alterId": 0,
-                    "id": str(uuid.uuid1())
-                }
-            ]
-        }
-
     def write(self, **kw):
         security_backup, tls_settings_backup, origin_protocol, domain = "", "", None, ""
         no_tls_group = (StreamType.MTPROTO, StreamType.SS)
@@ -169,8 +157,15 @@ class StreamWriter(Writer):
         if origin_protocol == StreamType.MTPROTO and origin_protocol != self.stream_type:
             clean_mtproto_tag(self.config, self.group_index)
 
-        if "KCP" in self.stream_type.name:
-            self.to_vmess(self.stream_type.value)
+        server = self.load_template('server.json')
+        server["inbounds"][0]["port"] = self.part_json["port"]
+        server["inbounds"][0]["settings"]["clients"][0]["id"] = str(uuid.uuid1())
+        if "allocate" in self.part_json:
+            server["inbounds"][0]["allocate"] = self.part_json["allocate"]
+        self.part_json = server["inbounds"][0]
+
+        if self.stream_type.name.startswith('KCP'):
+            self.to_kcp(self.stream_type.value)
 
         elif self.stream_type == StreamType.TCP:
             self.part_json["streamSettings"] = self.load_template('tcp.json')
@@ -216,6 +211,23 @@ class StreamWriter(Writer):
             if "host" in kw:
                 ws["wsSettings"]["headers"]["Host"] = kw['host']
             self.part_json["streamSettings"] = ws
+
+        elif self.stream_type == StreamType.GRPC:
+            alpn = ["h2"]
+            self.part_json["streamSettings"] = self.load_template('tcp.json')
+            self.part_json["streamSettings"]["network"] = "grpc"
+            self.part_json["streamSettings"]["grpcSettings"]["serviceName"] = ''.join(random.sample(string.ascii_letters + string.digits, 8))
+            if "mode" in kw and kw["mode"] == "multi":
+                self.part_json["streamSettings"]["grpcSettings"]["multiMode"] = True
+            if "fallbacks" in self.part_json["settings"]:
+                del self.part_json["settings"]["fallbacks"]
+            self.save()
+            if not "certificates" in tls_settings_backup:
+                from ..config_modify.tls import TLSModifier
+                tm = TLSModifier(self.group_tag, self.group_index, alpn=alpn)
+                tm.turn_on(False)
+                return
+            tls_settings_backup["alpn"] = alpn
 
         elif "vless" in self.stream_type.value:
             alpn = ["http/1.1"]
