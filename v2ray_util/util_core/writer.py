@@ -79,6 +79,8 @@ class StreamWriter(Writer):
         mtproto_in["tag"] = self.group_tag
         if "allocate" in self.part_json:
             mtproto_in["allocate"] = self.part_json["allocate"]
+        if "sniffing" in self.part_json:
+            mtproto_in["sniffing"] = self.part_json["sniffing"]
         salt = "abcdef" + string.digits
         secret = ''.join([random.choice(salt) for _ in range(32)])
         mtproto_in["settings"]["users"][0]["secret"] = secret
@@ -162,6 +164,8 @@ class StreamWriter(Writer):
         server["inbounds"][0]["settings"]["clients"][0]["id"] = str(uuid.uuid1())
         if "allocate" in self.part_json:
             server["inbounds"][0]["allocate"] = self.part_json["allocate"]
+        if "sniffing" in self.part_json:
+            server["inbounds"][0]["sniffing"] = self.part_json["sniffing"]
         self.part_json = server["inbounds"][0]
         self.config["inbounds"][self.group_index] = self.part_json
 
@@ -201,6 +205,8 @@ class StreamWriter(Writer):
             ss["port"] = self.part_json["port"]
             if "allocate" in self.part_json:
                 ss["allocate"] = self.part_json["allocate"]
+            if "sniffing" in self.part_json:
+                ss["sniffing"] = self.part_json["sniffing"]
             ss["settings"]["method"] = kw["method"]
             ss["settings"]["password"] = kw["password"]
             self.part_json = ss
@@ -553,6 +559,15 @@ class NodeWriter(Writer):
         new_inbound = server["inbounds"][0]
         new_inbound["port"] = int(newPort)
         new_inbound["settings"]["clients"][0]["id"] = str(uuid.uuid1())
+        for rule in self.config["routing"]["rules"]:
+            if "protocol" in rule and "bittorrent" in rule["protocol"]:
+                new_inbound.update({
+                    "sniffing": {
+                        "enabled": True,
+                        "destOverride": ["http", "tls"]
+                    }
+                })
+                break
         self.config["inbounds"].append(new_inbound)
         print(_("add port group success!"))
         self.save()
